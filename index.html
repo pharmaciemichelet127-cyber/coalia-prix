@@ -140,6 +140,151 @@
     .header { flex-direction: column; gap: 16px; }
   }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js">
+// ── GLOBALS for PDF ──
+let currentBL = null;
+let currentMatched = [];
+
+// ── GENERATE SIMPLIFIED PDF ──
+function generatePDF(bl, matched) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  const pageW = 210;
+  const marginL = 15;
+  const marginR = 15;
+  const colW = pageW - marginL - marginR;
+
+  // ── Header band
+  doc.setFillColor(0, 59, 122);
+  doc.rect(0, 0, 210, 28, 'F');
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.text('COALIA — Prix Net Rendu Officine', marginL, 12);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.text(`BL N° ${bl.bl_numero || '—'}   |   Date : ${bl.bl_date || '—'}   |   ${bl.client_nom || '—'}`, marginL, 19);
+  doc.text(`TSRF au 26/03/2026   |   Édité le ${new Date().toLocaleDateString('fr-FR')}`, marginL, 24);
+
+  // ── Table header
+  let y = 36;
+  doc.setFillColor(214, 230, 247);
+  doc.rect(marginL, y - 5, colW, 8, 'F');
+  doc.setTextColor(0, 59, 122);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+
+  const c1 = marginL;       // Libellé
+  const c2 = marginL + 90;  // CIP / EAN
+  const c3 = marginL + 135; // Qté
+  const c4 = marginL + 148; // Prix rendu officine
+
+  doc.text('Libellé', c1, y);
+  doc.text('CIP / EAN13', c2, y);
+  doc.text('Qté', c3, y);
+  doc.text('Prix rendu officine', c4, y);
+
+  y += 6;
+
+  // ── Rows
+  let rowIndex = 0;
+  matched.forEach(m => {
+    const r = m.rec;
+
+    // Check page overflow
+    if (y > 270) {
+      doc.addPage();
+      y = 20;
+      // Repeat header
+      doc.setFillColor(214, 230, 247);
+      doc.rect(marginL, y - 5, colW, 8, 'F');
+      doc.setTextColor(0, 59, 122);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.text('Libellé', c1, y);
+      doc.text('CIP / EAN13', c2, y);
+      doc.text('Qté', c3, y);
+      doc.text('Prix rendu officine', c4, y);
+      y += 6;
+    }
+
+    // Alternating row bg
+    if (rowIndex % 2 === 0) {
+      doc.setFillColor(248, 245, 240);
+      doc.rect(marginL, y - 4, colW, 8, 'F');
+    }
+
+    doc.setTextColor(26, 26, 46);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+
+    // Libellé — truncate if too long
+    const label = r.gamme.trim();
+    const labelLines = doc.splitTextToSize(label, 86);
+    doc.text(labelLines[0], c1, y);
+
+    // CIP + EAN
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(80, 80, 120);
+    doc.text(`CIP: ${m.code_cip || '—'}`, c2, y - 1);
+    doc.text(`EAN: ${r.code13}`, c2, y + 3);
+
+    // Qty
+    doc.setTextColor(26, 26, 46);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text(String(m.quantite || 1), c3, y);
+
+    // Prix rendu officine — highlighted
+    doc.setFillColor(0, 59, 122);
+    doc.rect(c4 - 2, y - 4, 44, 8, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    const prix = Number(r.prix_rendu).toFixed(4).replace('.', ',') + ' €';
+    doc.text(prix, c4 + 21, y, { align: 'right' });
+
+    // Subtotal line (qty x price)
+    doc.setTextColor(150, 150, 150);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    const total = (Number(r.prix_rendu) * (m.quantite || 1)).toFixed(2).replace('.', ',');
+    doc.text(`= ${total} € HT pour ${m.quantite || 1} u.`, c4 - 2, y + 3.5);
+
+    y += 10;
+    rowIndex++;
+  });
+
+  // ── Total line
+  y += 4;
+  const totalRendu = matched.reduce((s, m) => s + m.rec.prix_rendu * (m.quantite || 1), 0);
+  doc.setFillColor(0, 59, 122);
+  doc.rect(marginL, y - 5, colW, 9, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text('TOTAL RENDU OFFICINE HT', c1, y);
+  doc.text(totalRendu.toFixed(2).replace('.', ',') + ' €', pageW - marginR, y, { align: 'right' });
+
+  // ── Footer
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setTextColor(180, 180, 180);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.text(`Page ${i} / ${pageCount}   —   TSRF COALIA 26/03/2026   —   pharmaciemichelet127-cyber.github.io/coalia-prix`, pageW / 2, 292, { align: 'center' });
+  }
+
+  // ── Save
+  const filename = `PrixRenduOfficine_BL${bl.bl_numero || 'COALIA'}_${new Date().toLocaleDateString('fr-FR').replace(/\//g,'-')}.pdf`;
+  doc.save(filename);
+}
+</script>
 </head>
 <body>
 <div class="page">
@@ -579,7 +724,13 @@ function renderResults(bl, matched, notFound) {
     html += `<div class="frais-line">Frais logistiques &amp; substitution COALIA (BL) <strong>${parseFloat(bl.frais_logistiques_ht).toFixed(2).replace('.',',')} € HT</strong></div>`;
   }
 
-  html += `<button class="btn-download" onclick="window.print()">&#x1F4E5; Imprimer / Enregistrer en PDF</button>`;
+  html += `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px">
+      <button class="btn-download" onclick="generatePDF(currentBL, currentMatched)">&#x1F4C4; Télécharger PDF simplifié</button>
+      <button class="btn-download" style="background:var(--blue-mid)" onclick="window.print()">&#x1F5A8; Imprimer vue complète</button>
+    </div>`;
+  currentBL = bl;
+  currentMatched = matched;
   container.innerHTML = html;
   container.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
