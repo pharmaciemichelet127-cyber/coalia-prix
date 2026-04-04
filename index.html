@@ -128,9 +128,34 @@
   .apikey-note { font-size: 11px; color: #888; margin-top: 8px; line-height: 1.6; }
   .apikey-note a { color: var(--blue-mid); }
 
+
+  /* ── Simple table ── */
+  .simple-table { background: white; border-radius: 16px; border: 1px solid var(--border); overflow: hidden; box-shadow: var(--shadow); margin-bottom: 16px; }
+  .st-head { display: grid; grid-template-columns: 1fr 130px 40px 130px; background: var(--blue); color: white; padding: 10px 16px; gap: 12px; }
+  .st-head > div { font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.85); }
+  .st-row { display: grid; grid-template-columns: 1fr 130px 40px 130px; padding: 10px 16px; gap: 12px; align-items: center; border-bottom: 1px solid var(--border); }
+  .st-row:last-child { border: none; }
+  .st-row-alt { background: var(--cream); }
+  .st-notfound { background: var(--red-light); }
+  .st-lib-name { font-weight: 600; font-size: 13px; color: var(--ink); }
+  .st-lib-labo { font-size: 10px; color: #999; font-family: 'DM Mono', monospace; margin-top: 2px; }
+  .st-cip { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--blue-mid); }
+  .st-ean { font-family: 'DM Mono', monospace; font-size: 10px; color: #aaa; margin-top: 2px; }
+  .st-col-qty { font-family: 'DM Mono', monospace; font-size: 13px; font-weight: 600; color: var(--ink); text-align: center; }
+  .st-col-prix { text-align: right; }
+  .st-prix-unit { font-family: 'DM Mono', monospace; font-size: 14px; font-weight: 700; color: var(--blue); }
+  .st-prix-total { font-size: 10px; color: #999; margin-top: 2px; }
+  .st-total { display: grid; grid-template-columns: 1fr 130px 40px 130px; padding: 12px 16px; gap: 12px; background: var(--blue); }
+  .st-total .st-col-lib { font-weight: 700; font-size: 13px; color: white; font-family: 'DM Mono', monospace; letter-spacing: 0.05em; }
+  .st-total-val { font-family: 'DM Mono', monospace; font-size: 16px; font-weight: 700; color: white; text-align: right; }
+  @media (max-width: 600px) {
+    .st-head, .st-row, .st-total { grid-template-columns: 1fr 90px 30px 100px; }
+    .st-cip, .st-ean { font-size: 9px; }
+    .st-prix-unit { font-size: 12px; }
+  }
   @media print {
     body::before { display: none; }
-    .upload-section, .btn-analyze, .status-bar, .btn-download, .header-badge, .apikey-section { display: none !important; }
+    .upload-section, .btn-analyze, .status-bar, .btn-download, .header-badge, .apikey-section, .results-header, .summary-strip { display: none !important; }
     .product-card { break-inside: avoid; box-shadow: none; border: 1px solid #ccc; }
   }
   @media (max-width: 600px) {
@@ -140,151 +165,132 @@
     .header { flex-direction: column; gap: 16px; }
   }
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
 // ── GLOBALS for PDF ──
 let currentBL = null;
 let currentMatched = [];
 
 // ── GENERATE SIMPLIFIED PDF ──
 function generatePDF(bl, matched) {
+  if (!window.jspdf) { alert("Bibliothèque PDF non chargée, réessayez dans quelques secondes."); return; }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
-  const pageW = 210;
-  const marginL = 15;
-  const marginR = 15;
-  const colW = pageW - marginL - marginR;
+  const pW = 210, mL = 14, mR = 14, cW = pW - mL - mR;
+  const cLib = mL, cCode = mL + 95, cPrix = pW - mR;
 
-  // ── Header band
+  function addTableHeader(y) {
+    doc.setFillColor(0, 59, 122);
+    doc.rect(mL, y - 5, cW, 7, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text('Libellé', cLib + 2, y);
+    doc.text('CIP / EAN13', cCode, y);
+    doc.text('Prix rendu officine HT', cPrix, y, { align: 'right' });
+    return y + 5;
+  }
+
+  // ── Page header
   doc.setFillColor(0, 59, 122);
-  doc.rect(0, 0, 210, 28, 'F');
-
+  doc.rect(0, 0, 210, 22, 'F');
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.text('COALIA — Prix Net Rendu Officine', marginL, 12);
-
+  doc.setFontSize(14);
+  doc.text('COALIA — Prix Net Rendu Officine', mL, 10);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.text(`BL N° ${bl.bl_numero || '—'}   |   Date : ${bl.bl_date || '—'}   |   ${bl.client_nom || '—'}`, marginL, 19);
-  doc.text(`TSRF au 26/03/2026   |   Édité le ${new Date().toLocaleDateString('fr-FR')}`, marginL, 24);
+  doc.setFontSize(7.5);
+  doc.text('BL N° ' + (bl.bl_numero||'—') + '   |   ' + (bl.bl_date||'—') + '   |   ' + (bl.client_nom||'—'), mL, 16);
+  doc.text('TSRF 26/03/2026   |   Édité le ' + new Date().toLocaleDateString('fr-FR'), pW - mR, 16, { align: 'right' });
 
-  // ── Table header
-  let y = 36;
-  doc.setFillColor(214, 230, 247);
-  doc.rect(marginL, y - 5, colW, 8, 'F');
-  doc.setTextColor(0, 59, 122);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
-
-  const c1 = marginL;       // Libellé
-  const c2 = marginL + 90;  // CIP / EAN
-  const c3 = marginL + 135; // Qté
-  const c4 = marginL + 148; // Prix rendu officine
-
-  doc.text('Libellé', c1, y);
-  doc.text('CIP / EAN13', c2, y);
-  doc.text('Qté', c3, y);
-  doc.text('Prix rendu officine', c4, y);
-
-  y += 6;
+  let y = 32;
+  y = addTableHeader(y);
 
   // ── Rows
-  let rowIndex = 0;
-  matched.forEach(m => {
+  matched.forEach((m, i) => {
     const r = m.rec;
-
-    // Check page overflow
-    if (y > 270) {
+    if (y > 272) {
       doc.addPage();
+      // header band
+      doc.setFillColor(0, 59, 122);
+      doc.rect(0, 0, 210, 10, 'F');
+      doc.setTextColor(255,255,255);
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(7);
+      doc.text('COALIA — Prix Net Rendu Officine  |  BL N° ' + (bl.bl_numero||''), mL, 7);
       y = 20;
-      // Repeat header
-      doc.setFillColor(214, 230, 247);
-      doc.rect(marginL, y - 5, colW, 8, 'F');
-      doc.setTextColor(0, 59, 122);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8);
-      doc.text('Libellé', c1, y);
-      doc.text('CIP / EAN13', c2, y);
-      doc.text('Qté', c3, y);
-      doc.text('Prix rendu officine', c4, y);
-      y += 6;
+      y = addTableHeader(y);
     }
 
-    // Alternating row bg
-    if (rowIndex % 2 === 0) {
+    // row bg
+    if (i % 2 === 0) {
       doc.setFillColor(248, 245, 240);
-      doc.rect(marginL, y - 4, colW, 8, 'F');
+      doc.rect(mL, y - 3.5, cW, 10, 'F');
     }
 
+    // Libellé
     doc.setTextColor(26, 26, 46);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-
-    // Libellé — truncate if too long
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
     const label = r.gamme.trim();
-    const labelLines = doc.splitTextToSize(label, 86);
-    doc.text(labelLines[0], c1, y);
+    const lines = doc.splitTextToSize(label, 88);
+    doc.text(lines[0], cLib + 2, y + 1);
+    // Qty small
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(120, 120, 120);
+    doc.text('Qté : ' + (m.quantite||1), cLib + 2, y + 5.5);
 
     // CIP + EAN
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
-    doc.setTextColor(80, 80, 120);
-    doc.text(`CIP: ${m.code_cip || '—'}`, c2, y - 1);
-    doc.text(`EAN: ${r.code13}`, c2, y + 3);
+    doc.setTextColor(60, 80, 130);
+    doc.text('CIP  ' + (m.code_cip||'—'), cCode, y + 1);
+    doc.text('EAN ' + r.code13, cCode, y + 5.5);
 
-    // Qty
-    doc.setTextColor(26, 26, 46);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.text(String(m.quantite || 1), c3, y);
-
-    // Prix rendu officine — highlighted
-    doc.setFillColor(0, 59, 122);
-    doc.rect(c4 - 2, y - 4, 44, 8, 'F');
+    // Prix — blue pill
+    const prix = Number(r.prix_rendu).toFixed(4).replace('.', ',') + ' €';
+    doc.setFillColor(0, 102, 204);
+    doc.roundedRect(cPrix - 32, y - 3, 33, 8, 2, 2, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    const prix = Number(r.prix_rendu).toFixed(4).replace('.', ',') + ' €';
-    doc.text(prix, c4 + 21, y, { align: 'right' });
+    doc.text(prix, cPrix - 1, y + 2.5, { align: 'right' });
 
-    // Subtotal line (qty x price)
-    doc.setTextColor(150, 150, 150);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(6.5);
-    const total = (Number(r.prix_rendu) * (m.quantite || 1)).toFixed(2).replace('.', ',');
-    doc.text(`= ${total} € HT pour ${m.quantite || 1} u.`, c4 - 2, y + 3.5);
+    // separator line
+    doc.setDrawColor(220, 215, 205);
+    doc.setLineWidth(0.2);
+    doc.line(mL, y + 6.5, pW - mR, y + 6.5);
 
-    y += 10;
-    rowIndex++;
+    y += 11;
   });
 
-  // ── Total line
-  y += 4;
-  const totalRendu = matched.reduce((s, m) => s + m.rec.prix_rendu * (m.quantite || 1), 0);
+  // ── Total
+  y += 3;
+  if (y > 272) { doc.addPage(); y = 20; }
+  const total = matched.reduce((s, m) => s + m.rec.prix_rendu * (m.quantite||1), 0);
   doc.setFillColor(0, 59, 122);
-  doc.rect(marginL, y - 5, colW, 9, 'F');
+  doc.rect(mL, y - 4, cW, 9, 'F');
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
-  doc.text('TOTAL RENDU OFFICINE HT', c1, y);
-  doc.text(totalRendu.toFixed(2).replace('.', ',') + ' €', pageW - marginR, y, { align: 'right' });
+  doc.text('TOTAL RENDU OFFICINE HT', cLib + 2, y + 1);
+  doc.text(total.toFixed(2).replace('.', ',') + ' €', cPrix - 1, y + 1, { align: 'right' });
 
-  // ── Footer
-  const pageCount = doc.internal.getNumberOfPages();
-  for (let i = 1; i <= pageCount; i++) {
+  // ── Footer on all pages
+  const n = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= n; i++) {
     doc.setPage(i);
     doc.setTextColor(180, 180, 180);
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
-    doc.text(`Page ${i} / ${pageCount}   —   TSRF COALIA 26/03/2026   —   pharmaciemichelet127-cyber.github.io/coalia-prix`, pageW / 2, 292, { align: 'center' });
+    doc.setFontSize(6.5);
+    doc.text('Page ' + i + ' / ' + n + '  —  TSRF COALIA 26/03/2026  —  pharmaciemichelet127-cyber.github.io/coalia-prix', pW/2, 292, { align: 'center' });
   }
 
-  // ── Save
-  const filename = `PrixRenduOfficine_BL${bl.bl_numero || 'COALIA'}_${new Date().toLocaleDateString('fr-FR').replace(/\//g,'-')}.pdf`;
-  doc.save(filename);
-}
-</script>
+  const fname = 'PrixRenduOfficine_BL' + (bl.bl_numero||'COALIA') + '_' + new Date().toLocaleDateString('fr-FR').replace(/\/g,'-') + '.pdf';
+  doc.save(fname);
+}</script>
 </head>
 <body>
 <div class="page">
@@ -628,9 +634,8 @@ function pct(n) { return (Number(n)*100).toFixed(2).replace('.',',') + ' %'; }
 // ── RENDER ──
 function renderResults(bl, matched, notFound) {
   const container = document.getElementById('results');
-
-  const totalRenduOfficine = matched.reduce((s, m) => s + m.rec.prix_rendu * (m.quantite || 1), 0);
-  const totalBL = matched.reduce((s, m) => s + (m.prix_net_remise_ht || 0) * (m.quantite || 1), 0);
+  const totalRendu = matched.reduce((s, m) => s + m.rec.prix_rendu * (m.quantite || 1), 0);
+  const totalBL    = matched.reduce((s, m) => s + (m.prix_net_remise_ht || 0) * (m.quantite || 1), 0);
 
   let html = `
   <div class="results-header">
@@ -639,101 +644,262 @@ function renderResults(bl, matched, notFound) {
   </div>
 
   <div class="bl-card">
-    <div><div class="bl-field-label">N° BL</div><div class="bl-field-value">${bl.bl_numero || '—'}</div></div>
-    <div><div class="bl-field-label">Date</div><div class="bl-field-value">${bl.bl_date || '—'}</div></div>
-    <div><div class="bl-field-label">Client</div><div class="bl-field-value" style="font-size:12px">${bl.client_nom || bl.client_code || '—'}</div></div>
-    <div><div class="bl-field-label">Total HT BL</div><div class="bl-field-value">${bl.total_ht || '—'} €</div></div>
+    <div><div class="bl-field-label">N° BL</div><div class="bl-field-value">${bl.bl_numero||'—'}</div></div>
+    <div><div class="bl-field-label">Date</div><div class="bl-field-value">${bl.bl_date||'—'}</div></div>
+    <div><div class="bl-field-label">Client</div><div class="bl-field-value" style="font-size:12px">${bl.client_nom||bl.client_code||'—'}</div></div>
+    <div><div class="bl-field-label">Total HT BL</div><div class="bl-field-value">${bl.total_ht||'—'} €</div></div>
   </div>
 
-  <div class="summary-strip">
-    <div><div class="summary-label">Produits rapprochés</div><div class="summary-value">${matched.length} / ${(bl.produits||[]).length}</div></div>
-    <div><div class="summary-label">Total BL remisé</div><div class="summary-value">${fmt(totalBL, 2)}</div></div>
-    <div><div class="summary-label">Total rendu officine</div><div class="summary-value">${fmt(totalRenduOfficine, 2)}</div></div>
-    <div><div class="summary-label">Tarif TSRF</div><div class="summary-value">26/03/2026</div></div>
-  </div>
-  `;
+  <div class="simple-table">
+    <div class="st-head">
+      <div class="st-col-lib">Libellé</div>
+      <div class="st-col-code">CIP / EAN13</div>
+      <div class="st-col-qty">Qté</div>
+      <div class="st-col-prix">Prix rendu officine HT</div>
+    </div>`;
 
-  matched.forEach(m => {
+  matched.forEach((m, i) => {
     const r = m.rec;
-    const qty = m.quantite || 1;
-    const totalRendu = r.prix_rendu * qty;
-    const diffUnit = r.prix_rendu - (m.prix_net_remise_ht || 0);
-    const diffColor = Math.abs(diffUnit) < 0.005 ? 'var(--green)' : diffUnit > 0 ? 'var(--gold)' : 'var(--green)';
-
+    const prixUnit = Number(r.prix_rendu).toFixed(4).replace('.', ',');
+    const prixTotal = (Number(r.prix_rendu) * (m.quantite||1)).toFixed(2).replace('.', ',');
     html += `
-    <div class="product-card">
-      <div class="card-head">
-        <div class="card-head-left">
-          <div class="status-dot"></div>
-          <div>
-            <div class="card-designation">${r.gamme.trim()}</div>
-            <div class="card-codes">CIP : ${m.code_cip || '—'} &nbsp;|&nbsp; EAN13 : ${r.code13} &nbsp;|&nbsp; TVA : ${(r.tva*100).toFixed(1)} %</div>
-          </div>
-        </div>
-        <div class="card-labo">${r.labo}</div>
+    <div class="st-row ${i % 2 === 0 ? 'st-row-alt' : ''}">
+      <div class="st-col-lib">
+        <div class="st-lib-name">${r.gamme.trim()}</div>
+        <div class="st-lib-labo">${r.labo}</div>
       </div>
-      <div class="card-body">
-        <div class="price-grid">
-          <div class="price-col">
-            <div class="price-col-title">Décomposition TSRF 2026 — unité HT</div>
-            <div class="price-row"><span>Prix tarif HT 2026</span><span class="val">${fmt(r.tarif)}</span></div>
-            <div class="price-row deduct"><span>– Remise catégorielle (${pct(r.remise_cat)})</span><span class="val">– ${fmt(r.tarif * r.remise_cat)}</span></div>
-            <div class="price-row total"><span>= PPHT intermédiaire</span><span class="val">${fmt(r.ppht)}</span></div>
-            <div class="price-row deduct"><span>– Remise logistique (${pct(r.remise_log)})</span><span class="val">– ${fmt(r.ppht * r.remise_log)}</span></div>
-            <div class="price-row total"><span>= Prix net remisé HT</span><span class="val">${fmt(r.prix_net_remise)}</span></div>
-            <div class="price-row add"><span>+ Frais variables</span><span class="val">+ ${fmt(r.frais_var)}</span></div>
-            <div class="price-row add"><span>+ Commission mandat</span><span class="val">+ ${fmt(r.commission)}</span></div>
-            <div class="price-row add"><span>+ Frais logistiques</span><span class="val">+ ${fmt(r.frais_log)}</span></div>
-          </div>
-          <div class="price-col">
-            <div class="price-col-title">BL facturé — × ${qty} unités</div>
-            <div class="price-row"><span>Prix tarif BL</span><span class="val">${fmt(m.prix_tarif_ht)}</span></div>
-            <div class="price-row"><span>Prix net remisé BL</span><span class="val">${fmt(m.prix_net_remise_ht)}</span></div>
-            <div class="price-row total"><span>Montant BL total</span><span class="val">${fmt((m.prix_net_remise_ht||0) * qty, 2)}</span></div>
-            <div class="price-row" style="padding-top:12px"><span>Remise nette rendue</span><span class="val">${pct(r.remise_rendue)}</span></div>
-            <div class="price-row"><span>Colisage TSRF</span><span class="val">${r.colisage}</span></div>
-            <div class="price-row"><span>Écart unitaire</span><span class="val" style="color:${diffColor}">${diffUnit >= 0 ? '▲' : '▼'} ${fmt(Math.abs(diffUnit))}</span></div>
-            <div class="price-row"><span>Écart total (×${qty})</span><span class="val" style="color:${diffColor}">${fmt(Math.abs(diffUnit)*qty, 2)}</span></div>
-          </div>
-        </div>
-        <div class="rendu-box">
-          <div>
-            <div class="rendu-label">&#x2B50; Prix net rendu officine / unité</div>
-            <div class="rendu-price">${fmt(r.prix_rendu, 4)}</div>
-          </div>
-          <div class="rendu-details">
-            Pour ${qty} unités<br>
-            <strong>${fmt(totalRendu, 2)}</strong><br>
-            TVA ${(r.tva*100).toFixed(1)} % &#x2192; <strong>${fmt(totalRendu*(1+r.tva), 2)} TTC</strong>
-          </div>
-        </div>
+      <div class="st-col-code">
+        <div class="st-cip">CIP&nbsp;&nbsp;${m.code_cip||'—'}</div>
+        <div class="st-ean">EAN ${r.code13}</div>
       </div>
-      <div class="card-footer">
-        ${m.lot ? `<div class="meta-tag">Lot : <span>${m.lot}</span></div>` : ''}
-        ${m.date_peremption ? `<div class="meta-tag">Péremption : <span>${m.date_peremption}</span></div>` : ''}
-        <div class="meta-tag">Qté livrée : <span>${qty}</span></div>
+      <div class="st-col-qty">${m.quantite||1}</div>
+      <div class="st-col-prix">
+        <div class="st-prix-unit">${prixUnit} €</div>
+        <div class="st-prix-total">= ${prixTotal} € HT</div>
       </div>
     </div>`;
   });
 
   notFound.forEach(p => {
-    html += `<div class="not-found-card">&#x26A0; CIP <strong>${p.code_cip || '?'}</strong> — <em>${(p.designation||'').substring(0,60)}</em> — non trouvé dans le TSRF COALIA 2026</div>`;
+    html += `<div class="st-row st-notfound">
+      <div class="st-col-lib"><div class="st-lib-name">⚠ ${(p.designation||'').substring(0,60)}</div></div>
+      <div class="st-col-code" style="color:var(--red)">CIP ${p.code_cip||'?'} non trouvé</div>
+      <div class="st-col-qty">—</div>
+      <div class="st-col-prix">—</div>
+    </div>`;
   });
 
-  if (bl.frais_logistiques_ht && parseFloat(bl.frais_logistiques_ht) > 0) {
-    html += `<div class="frais-line">Frais logistiques &amp; substitution COALIA (BL) <strong>${parseFloat(bl.frais_logistiques_ht).toFixed(2).replace('.',',')} € HT</strong></div>`;
-  }
-
   html += `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px">
-      <button class="btn-download" onclick="generatePDF(currentBL, currentMatched)">&#x1F4C4; Télécharger PDF simplifié</button>
-      <button class="btn-download" style="background:var(--blue-mid)" onclick="window.print()">&#x1F5A8; Imprimer vue complète</button>
-    </div>`;
+    <div class="st-total">
+      <div class="st-col-lib">TOTAL RENDU OFFICINE HT</div>
+      <div class="st-col-code"></div>
+      <div class="st-col-qty"></div>
+      <div class="st-col-prix st-total-val">${totalRendu.toFixed(2).replace('.', ',')} €</div>
+    </div>
+  </div>
+
+  <button class="btn-download" onclick="generatePDF(currentBL, currentMatched)">
+    &#x1F4C4; Télécharger le PDF — Libellé / CIP / Prix rendu officine
+  </button>`;
+
+  container.innerHTML = html;
   currentBL = bl;
   currentMatched = matched;
-  container.innerHTML = html;
   container.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
-</script>
+
+
+// ── GLOBALS for PDF ──
+let currentBL = null;
+let currentMatched = [];
+
+// ── GENERATE SIMPLIFIED PDF ──
+function generatePDF(bl, matched) {
+  if (!window.jspdf) { alert("Bibliothèque PDF non chargée, réessayez dans quelques secondes."); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  const pW = 210, mL = 14, mR = 14, cW = pW - mL - mR;
+  const cLib = mL, cCode = mL + 95, cPrix = pW - mR;
+
+  function addTableHeader(y) {
+    doc.setFillColor(0, 59, 122);
+    doc.rect(mL, y - 5, cW, 7, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text('Libellé', cLib + 2, y);
+    doc.text('CIP / EAN13', cCode, y);
+    doc.text('Prix rendu officine HT', cPrix, y, { align: 'right' });
+    return y + 5;
+  }
+
+  // ── Page header
+  doc.setFillColor(0, 59, 122);
+  doc.rect(0, 0, 210, 22, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.text('COALIA — Prix Net Rendu Officine', mL, 10);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.text('BL N° ' + (bl.bl_numero||'—') + '   |   ' + (bl.bl_date||'—') + '   |   ' + (bl.client_nom||'—'), mL, 16);
+  doc.text('TSRF 26/03/2026   |   Édité le ' + new Date().toLocaleDateString('fr-FR'), pW - mR, 16, { align: 'right' });
+
+  let y = 32;
+  y = addTableHeader(y);
+
+  // ── Rows
+  matched.forEach((m, i) => {
+    const r = m.rec;
+    if (y > 272) {
+      doc.addPage();
+      // header band
+      doc.setFillColor(0, 59, 122);
+      doc.rect(0, 0, 210, 10, 'F');
+      doc.setTextColor(255,255,255);
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(7);
+      doc.text('COALIA — Prix Net Rendu Officine  |  BL N° ' + (bl.bl_numero||''), mL, 7);
+      y = 20;
+      y = addTableHeader(y);
+    }
+
+    // row bg
+    if (i % 2 === 0) {
+      doc.setFillColor(248, 245, 240);
+      doc.rect(mL, y - 3.5, cW, 10, 'F');
+    }
+
+    // Libellé
+    doc.setTextColor(26, 26, 46);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    const label = r.gamme.trim();
+    const lines = doc.splitTextToSize(label, 88);
+    doc.text(lines[0], cLib + 2, y + 1);
+    // Qty small
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(120, 120, 120);
+    doc.text('Qté : ' + (m.quantite||1), cLib + 2, y + 5.5);
+
+    // CIP + EAN
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(60, 80, 130);
+    doc.text('CIP  ' + (m.code_cip||'—'), cCode, y + 1);
+    doc.text('EAN ' + r.code13, cCode, y + 5.5);
+
+    // Prix — blue pill
+    const prix = Number(r.prix_rendu).toFixed(4).replace('.', ',') + ' €';
+    doc.setFillColor(0, 102, 204);
+    doc.roundedRect(cPrix - 32, y - 3, 33, 8, 2, 2, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text(prix, cPrix - 1, y + 2.5, { align: 'right' });
+
+    // separator line
+    doc.setDrawColor(220, 215, 205);
+    doc.setLineWidth(0.2);
+    doc.line(mL, y + 6.5, pW - mR, y + 6.5);
+
+    y += 11;
+  });
+
+  // ── Total
+  y += 3;
+  if (y > 272) { doc.addPage(); y = 20; }
+  const total = matched.reduce((s, m) => s + m.rec.prix_rendu * (m.quantite||1), 0);
+  doc.setFillColor(0, 59, 122);
+  doc.rect(mL, y - 4, cW, 9, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text('TOTAL RENDU OFFICINE HT', cLib + 2, y + 1);
+  doc.text(total.toFixed(2).replace('.', ',') + ' €', cPrix - 1, y + 1, { align: 'right' });
+
+  // ── Footer on all pages
+  const n = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= n; i++) {
+    doc.setPage(i);
+    doc.setTextColor(180, 180, 180);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.text('Page ' + i + ' / ' + n + '  —  TSRF COALIA 26/03/2026  —  pharmaciemichelet127-cyber.github.io/coalia-prix', pW/2, 292, { align: 'center' });
+  }
+
+  const fname = 'PrixRenduOfficine_BL' + (bl.bl_numero||'COALIA') + '_' + new Date().toLocaleDateString('fr-FR').replace(/\/g,'-') + '.pdf';
+  doc.save(fname);
+}</script>
+</head>
+<body>
+<div class="page">
+
+  <div class="header">
+    <div class="header-brand">
+      <div class="eyebrow">&#x2302; Outil de rapprochement pharmaceutique</div>
+      <h1>COALIA<br><em>Prix Rendu Officine</em></h1>
+      <p>Déposez votre bon de livraison COALIA (PDF scanné ou natif) — l'IA lit le document et affiche instantanément le prix net rendu officine de chaque produit.</p>
+    </div>
+    <div class="header-badge">
+      TSRF COALIA<br>
+      <span class="badge-date">26/03/2026</span><br>
+      1 473 références
+    </div>
+  </div>
+
+  <div class="apikey-section">
+    <span class="section-label">00 — Clé API Anthropic</span>
+    <div class="apikey-box" id="apikeyBox">
+      <span style="font-size:18px">&#x1F511;</span>
+      <input type="password" class="apikey-input" id="apikeyInput" placeholder="sk-ant-api03-..." autocomplete="off" oninput="checkApiKey()">
+      <button class="apikey-toggle" onclick="toggleApiKeyVisibility()" title="Afficher/Masquer">&#x1F441;</button>
+      <span class="apikey-status" id="apikeyStatus">Non renseignée</span>
+    </div>
+    <div class="apikey-note">
+      Votre clé est stockée uniquement dans ce navigateur (localStorage) et n'est jamais envoyée ailleurs qu'à l'API Anthropic.<br>
+      Obtenez votre clé sur <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com</a> — environ 0,01 € par analyse.
+    </div>
+  </div>
+
+  <div class="upload-section">
+    <span class="section-label">01 — Bon de livraison PDF (scanné ou natif)</span>
+    <div class="drop-zone" id="dropZone">
+      <div class="drop-icon">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+      </div>
+      <div class="drop-title">Glissez votre BL ici</div>
+      <div class="drop-sub">ou <span onclick="document.getElementById('fileInput').click()">cliquez pour sélectionner</span> — PDF scanné accepté</div>
+    </div>
+    <input type="file" id="fileInput" accept=".pdf,image/*">
+    <div class="file-info" id="fileInfo">
+      <span style="font-size:24px">&#x1F4C4;</span>
+      <div>
+        <div class="file-name" id="fileName"></div>
+        <div class="file-size" id="fileSize"></div>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn-analyze" id="btnAnalyze" disabled onclick="analyzeDocument()">
+    <span>&#x26A1;</span> Analyser le bon de livraison
+  </button>
+
+  <div class="status-bar" id="statusBar">
+    <div class="spinner"></div>
+    <div class="progress-steps" id="progressSteps">
+      <div class="step" id="s1">Encodage du PDF (toutes pages)...</div>
+      <div class="step" id="s2">Claude Vision lit le document et extrait tous les produits...</div>
+      <div class="step" id="s3">Rapprochement CIP/EAN avec le TSRF COALIA 2026 (1 473 références)...</div>
+      <div class="step" id="s4">Génération du rapport prix rendu officine...</div>
+    </div>
+  </div>
+
+  <div id="results"></div>
+</div>
+
+
 </body>
 </html>
