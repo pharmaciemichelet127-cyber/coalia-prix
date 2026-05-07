@@ -197,7 +197,9 @@ body{font-family:"Instrument Sans",sans-serif;background:var(--paper);color:var(
     </div>
     <div class="topbar-right"><span id="syncBadge" style="font-size:9px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-right:4px"></span>
       <button class="btn-table" onclick="openTable()">&#x1F4CB; Table CIP (<span id="tableCount">0</span>)</button>
-      <div class="topbar-badge">TSRF<br>26/03/2026</div>
+      <button class="btn-table" onclick="document.getElementById('tsrfInput').click()" title="Importer un nouveau fichier TSRF JSON">&#x1F504; MAJ TSRF</button>
+      <input type="file" id="tsrfInput" accept=".json" style="display:none" onchange="importTSRF(this)">
+      <div class="topbar-badge" id="tsrfBadge">TSRF<br><span id="tsrfDate">26/03/2026</span></div>
     </div>
   </div>
 </div>
@@ -381,9 +383,55 @@ function showSyncStatus(status){
   else{badge.textContent='Hors ligne';badge.style.color='#fca5a5';}
 }
 
+// ── IMPORT TSRF ──
+function importTSRF(input){
+  var file=input.files[0];
+  if(!file)return;
+  var reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      var data=JSON.parse(e.target.result);
+      if(!Array.isArray(data)||!data[0]||!data[0].code13){
+        alert('Format invalide. Le fichier TSRF doit être un tableau JSON avec les champs code13, prix_rendu, labo, etc.');
+        return;
+      }
+      // Mettre à jour la variable TSRF globale
+      TSRF.length=0;
+      data.forEach(function(r){TSRF.push(r);});
+      // Reconstruire byCode13
+      Object.keys(byCode13).forEach(function(k){delete byCode13[k];});
+      TSRF.forEach(function(r){if(r.code13)byCode13[r.code13]=r;});
+      // Extraire la date depuis le nom du fichier ou utiliser aujourd'hui
+      var dateStr=new Date().toLocaleDateString('fr-FR');
+      var match=file.name.match(/(\d{2})[.\-_\/](\d{2})[.\-_\/](\d{4})/);
+      if(match)dateStr=match[1]+'/'+match[2]+'/'+match[3];
+      document.getElementById('tsrfDate').textContent=dateStr;
+      localStorage.setItem('tsrf_date',dateStr);
+      localStorage.setItem('tsrf_data',JSON.stringify(data));
+      alert('TSRF mis à jour : '+TSRF.length+' produits chargés ('+dateStr+')');
+    }catch(err){
+      alert('Erreur lecture JSON : '+err.message);
+    }
+    input.value='';
+  };
+  reader.readAsText(file);
+}
+
 // Start
 initCorr();
 updateTableCount();
+// Charger TSRF depuis localStorage si disponible
+(function(){
+  var saved=localStorage.getItem('tsrf_data');
+  var savedDate=localStorage.getItem('tsrf_date');
+  if(saved){try{
+    var data=JSON.parse(saved);
+    TSRF.length=0;data.forEach(function(r){TSRF.push(r);});
+    Object.keys(byCode13).forEach(function(k){delete byCode13[k];});
+    TSRF.forEach(function(r){if(r.code13)byCode13[r.code13]=r;});
+    if(savedDate){var el=document.getElementById('tsrfDate');if(el)el.textContent=savedDate;}
+  }catch(e){}}
+})();
 
 // ── LOOKUP (4 levels) ──
 function lookup(cip,ean){
@@ -499,20 +547,12 @@ document.getElementById('btnAnalyze').addEventListener('click',function(){
           }
           setStep(4);
           var matched=[],notFound=[];
-          // Calcul du prorata des frais logistiques sur le total HT produits
-          var totalHTProduits=(bl.produits||[]).reduce(function(s,p){return s+(Number(p.prix_net_remise_ht)||0)*(Number(p.quantite)||1);},0);
-          var fraisTotal=Number(bl.frais_logistiques_ht)||0;
           (bl.produits||[]).forEach(function(p){
             var res=lookup(p.code_cip,p.code_ean13);
             var qte=Number(p.quantite)||1;
             var prixNetHT=Number(p.prix_net_remise_ht)||0;
-            var montantLigne=prixNetHT*qte;
-            // Frais proratisés au poids de la ligne dans le total HT
-            var fraisLigne=totalHTProduits>0?fraisTotal*(montantLigne/totalHTProduits):0;
-            // Prix net rendu / unité = (montant ligne + frais proratisés) / quantité
-            var prixRenduBL=qte>0?(montantLigne+fraisLigne)/qte:0;
-            if(res)matched.push({designation:p.designation,code_cip:p.code_cip,code_ean13:p.code_ean13,quantite:qte,prix_net_remise_ht:prixNetHT,frais_ligne:fraisLigne,prix_rendu_bl:prixRenduBL,lot:p.lot,date_peremption:p.date_peremption,rec:res.rec,method:res.method});
-            else notFound.push({designation:p.designation,code_cip:p.code_cip,code_ean13:p.code_ean13,quantite:qte,prix_net_remise_ht:prixNetHT,frais_ligne:fraisLigne,prix_rendu_bl:prixRenduBL,lot:p.lot,date_peremption:p.date_peremption,suggestions:suggest(p.designation)});
+            if(res)matched.push({designation:p.designation,code_cip:p.code_cip,code_ean13:p.code_ean13,quantite:qte,prix_net_remise_ht:prixNetHT,lot:p.lot,date_peremption:p.date_peremption,rec:res.rec,method:res.method});
+            else notFound.push({designation:p.designation,code_cip:p.code_cip,code_ean13:p.code_ean13,quantite:qte,prix_net_remise_ht:prixNetHT,lot:p.lot,date_peremption:p.date_peremption,suggestions:suggest(p.designation)});
           });
           renderResults(bl,matched,notFound);
           finishAnalysis(btn);
@@ -535,7 +575,7 @@ var _bl=null,_matched=[];
 function renderResults(bl,matched,notFound){
   _bl=bl;_matched=matched;
   window._notFound=notFound;
-  var tot=matched.reduce(function(s,m){return s+(m.prix_rendu_bl||0)*(m.quantite||1);},0);
+  var tot=matched.reduce(function(s,m){return s+m.rec.prix_rendu*(m.quantite||1);},0);
   var nMem=matched.filter(function(m){return m.method==='mem';}).length;
   var html='';
   html+='<div class="bl-banner">';
@@ -562,10 +602,10 @@ function renderResults(bl,matched,notFound){
       html+='<div class="prod-labo">'+r.labo+'</div></div>';
       html+='<div class="prod-body">'+(badges[m.method]||'');
       html+='<div class="prod-codes"><b>CIP BL</b> '+(m.code_cip||'--')+(m.method!=='cip'?'&nbsp;&nbsp;<b>EAN</b> '+r.code13+'<br>':'<br>')+'TVA '+(r.tva*100).toFixed(1)+' %</div>';
-      html+='<div class="prod-tags"><div class="tag">Qte : <b>'+q+'</b></div>'+(m.lot?'<div class="tag">Lot : <b>'+m.lot+'</b></div>':'')+(m.date_peremption?'<div class="tag">Peremption : <b>'+m.date_peremption+'</b></div>':'')+'<div class="tag">Net remise HT/u : <b>'+fmt(m.prix_net_remise_ht)+'</b></div><div class="tag">Frais répartis : <b>'+fmt(m.frais_ligne/q)+'</b></div></div>';
+      html+='<div class="prod-tags"><div class="tag">Qte : <b>'+q+'</b></div>'+(m.lot?'<div class="tag">Lot : <b>'+m.lot+'</b></div>':'')+(m.date_peremption?'<div class="tag">Peremption : <b>'+m.date_peremption+'</b></div>':'')+'</div>';
       html+='<div class="price-box '+(prices[m.method]||'price-blue')+'">';
-      html+='<div class="price-box-left"><label>Prix rendu officine / unite</label><div class="big">'+fmt(m.prix_rendu_bl)+'</div></div>';
-      html+='<div class="price-box-right">Pour '+q+' unites<br><b>'+fmt((m.prix_rendu_bl||0)*q,2)+'</b><br>TTC <b>'+fmt((m.prix_rendu_bl||0)*q*(1+r.tva),2)+'</b><br><span style="opacity:.6;font-size:9px">TSRF ref : '+fmt(r.prix_rendu)+'</span></div>';
+      html+='<div class="price-box-left"><label>Prix rendu officine / unite</label><div class="big">'+fmt(r.prix_rendu)+'</div></div>';
+      html+='<div class="price-box-right">Pour '+q+' unites<br><b>'+fmt(r.prix_rendu*q,2)+'</b><br>TTC <b>'+fmt(r.prix_rendu*q*(1+r.tva),2)+'</b></div>';
       html+='</div></div></div>';
     });
   }
@@ -743,7 +783,7 @@ function genBLPdf(){
     doc.text('EAN '+r.code13,cCode,y+5.5);
     doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.setTextColor(26,26,46);
     doc.text(String(q),cQty+3,y+1,{align:'center'});
-    var prixStr=Number(m.prix_rendu_bl||0).toFixed(4).replace('.',',')+' EUR';
+    var prixStr=Number(r.prix_rendu).toFixed(4).replace('.',',')+' EUR';
     var fc=m.method==='mem'?[74,29,150]:m.method!=='cip'?[200,146,42]:[0,102,204];
     doc.setFillColor(fc[0],fc[1],fc[2]);doc.roundedRect(cPrix-33,y-3,34,8,2,2,'F');
     doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(9);
@@ -752,7 +792,7 @@ function genBLPdf(){
     y+=11;
   });
   y+=3;if(y>272){doc.addPage();y=20;}
-  var totBL=_matched.reduce(function(s,m){return s+(m.prix_rendu_bl||0)*(m.quantite||1);},0);
+  var totBL=_matched.reduce(function(s,m){return s+m.rec.prix_rendu*(m.quantite||1);},0);
   doc.setFillColor(0,59,122);doc.rect(mL,y-4,cW,9,'F');
   doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(9);
   doc.text('TOTAL RENDU OFFICINE HT',cLib+2,y+1);
